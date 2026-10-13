@@ -1,0 +1,104 @@
+name: round2-surgery
+
+# Round 2 of the seewo XPT21 slimming project: delete 32 preinstalled packages
+# from the system/vendor/product ext4 images and install the EClassSettings
+# routing stub.
+#
+# The workstation driving this project is a non-admin Windows droplet: no Linux
+# kernel, no root, no loop mount, no e2fsprogs. This runner has all of it, and
+# its sudo is passwordless. What it does *not* get is the firmware: it only ever
+# sees ~104 KB of "skeleton" containers (byte-identical ext4 metadata, all file
+# data zeroed) and hands back only the blocks that changed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      lzma_preset:
+        description: "LZMA preset for the returned deltas (0-9)"
+        required: false
+        default: "6"
+  push:
+    paths:
+      - "surgery.sh"
+      - "bimg.py"
+      - "removelist.txt"
+      - "skel/**"
+      - "app/**"
+      - ".github/workflows/surgery.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  surgery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show what we were handed
+        run: |
+          echo "--- skeletons ---"
+          ls -l skel/
+          echo "--- stub apk ---"
+          ls -l app/
+          echo "--- removelist ---"
+          grep -vc '^#' removelist.txt
+          python3 --version
+
+      # setfattr/getfattr live in `attr`, which is not always preinstalled.
+      # e2fsprogs (e2fsck, debugfs) is, but pin it explicitly so a runner image
+      # change cannot quietly remove the offline xattr fallback.
+      - name: Install e2fsprogs and attr
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq e2fsprogs attr
+          /sbin/e2fsck -V
+          setfattr --version | head -1
+
+      - name: Run the surgery
+        run: |
+          set -o pipefail
+          bash surgery.sh 2>&1 | tee surgery.log
+
+      - name: Summarise the deltas
+        if: always()
+        run: |
+          echo "### round 2 surgery" >> "$GITHUB_STEP_SUMMARY"
+          if [ -d out ]; then
+            for f in out/*.delta.bimg; do
+              [ -f "$f" ] || continue
+              echo "- \`$(basename "$f")\` $(stat -c%s "$f") bytes" >> "$GITHUB_STEP_SUMMARY"
+            done
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat out/df_after.txt 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "no out/ directory -- the run failed before producing deltas" \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload deltas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round2-deltas
+          path: |
+            out/*.delta.bimg
+            out/removelist.used.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round2-logs
+          path: |
+            surgery.log
+            out/post_surgery.txt
+            out/df_after.txt
+          if-no-files-found: warn
+          retention-days: 30

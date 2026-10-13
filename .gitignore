@@ -1,0 +1,25 @@
+# Whitelist-style: ignore everything, then re-admit exactly what the runner
+# needs. Safer than blacklisting, because the parent workspace next door holds
+# 4.25 GiB of firmware images and analysis reports that contain the device SN,
+# MAC addresses and sensor calibration values. Nothing should reach this repo by
+# accident.
+*
+!.gitignore
+!README.md
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
+!surgery.sh
+!bimg.py
+!removelist.txt
+!app/
+!app/EClassSettingsStub.apk
+!skel/
+!skel/*.skel.bimg
+
+# Never, under any circumstances:
+work/
+out/
+*.img
+*.log
+*.pristine.img
