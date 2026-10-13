@@ -10,10 +10,12 @@
 !.github/workflows/
 !.github/workflows/*.yml
 !surgery.sh
+!surgery_gms.sh
 !bimg.py
 !removelist.txt
 !app/
 !app/EClassSettingsStub.apk
+!gms.zip
 !skel/
 !skel/*.skel.bimg
 

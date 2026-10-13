@@ -1,0 +1,63 @@
+name: gms-surgery
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "surgery_gms.sh"
+      - "bimg.py"
+      - "skel/system_a.skel.bimg"
+      - "gms.zip"
+      - ".github/workflows/gms-surgery.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  surgery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show input assets
+        run: |
+          echo "--- skeleton ---"
+          ls -lh skel/system_a.skel.bimg
+          echo "--- gms payload ---"
+          ls -lh gms.zip
+          python3 --version
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq e2fsprogs attr unzip
+          /sbin/e2fsck -V
+          setfattr --version | head -1
+
+      - name: Run GMS surgery
+        run: |
+          set -o pipefail
+          bash surgery_gms.sh 2>&1 | tee gms_surgery.log
+
+      - name: Upload deltas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gms-deltas
+          path: |
+            out/*.delta.bimg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gms-logs
+          path: |
+            gms_surgery.log
+          if-no-files-found: warn
+          retention-days: 30
