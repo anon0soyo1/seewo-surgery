@@ -15,7 +15,7 @@
 !removelist.txt
 !app/
 !app/EClassSettingsStub.apk
-!gms.zip
+!gms.zip*
 !skel/
 !skel/*.skel.bimg
 
