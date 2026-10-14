@@ -77,7 +77,7 @@ DEFAULT_PRESET = 6
 # Refuse to buffer more than this while building a container. Every real
 # workflow here carries a few thousand blocks at most; blowing past this means
 # something is wrong (e.g. somebody tried to pack a whole 3 GiB image).
-MAX_BUFFER = 512 * 1024 * 1024
+MAX_BUFFER = 2048 * 1024 * 1024
 READ_CHUNK = 1024             # blocks per read when scanning an image
 
 
