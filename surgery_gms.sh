@@ -99,6 +99,14 @@ while IFS= read -r rel; do
   fi
 done < <(cd "$WORK/gms_payload/system" && find . -mindepth 1 | sed 's|^\./||')
 
+if [ -f "$MNT/system/system/app_filter/launcher/launcher_app_not_show_list.json" ]; then
+  step "clearing app hide list in launcher_app_not_show_list.json"
+  echo "[]" | sudo tee "$MNT/system/system/app_filter/launcher/launcher_app_not_show_list.json" > /dev/null
+  sudo chown 0:0 "$MNT/system/system/app_filter/launcher/launcher_app_not_show_list.json"
+  sudo chmod 0644 "$MNT/system/system/app_filter/launcher/launcher_app_not_show_list.json"
+  sudo setfattr -n security.selinux -v "$CTX_SYSTEM_FILE_HEX" "$MNT/system/system/app_filter/launcher/launcher_app_not_show_list.json" 2>/dev/null || true
+fi
+
 if [ "$label_failures" -gt 0 ]; then
   step "setfattr reported $label_failures failures, will verify and fallback if needed"
 fi
@@ -118,12 +126,10 @@ check_ctx() {
 }
 
 ctx_errs=0
-check_ctx "$MNT/system/system/priv-app/PrebuiltGmsCore" || ctx_errs=$((ctx_errs + 1))
+check_ctx "$MNT/system/system/priv-app/GmsCore" || ctx_errs=$((ctx_errs + 1))
 check_ctx "$MNT/system/system/app/Chrome" || ctx_errs=$((ctx_errs + 1))
 check_ctx "$MNT/system/system/app/WebViewGoogle" || ctx_errs=$((ctx_errs + 1))
 check_ctx "$MNT/system/system/app/LatinIMEGooglePrebuilt" || ctx_errs=$((ctx_errs + 1))
-check_ctx "$MNT/system/system/overlay/NavigationBarMode3ButtonOverlay.apk" || ctx_errs=$((ctx_errs + 1))
-check_ctx "$MNT/system/system/overlay/NavigationBarModeGesturalOverlay.apk" || ctx_errs=$((ctx_errs + 1))
 sudo umount "$MNT/system"
 
 if [ "$ctx_errs" -gt 0 ]; then
@@ -156,6 +162,36 @@ if [ -d "$MNT/product/app/LatinIME" ]; then
   sudo rm -rf "$MNT/product/app/LatinIME"
 fi
 
+if [ -d "$WORK/gms_payload/product" ]; then
+  step "copying files into /product"
+  sudo cp -r "$WORK/gms_payload/product/"* "$MNT/product/"
+
+  step "setting permissions on /product (0755 for dirs, 0644 for files, owner 0:0)"
+  while IFS= read -r rel; do
+    target="$MNT/product/$rel"
+    if [ -d "$target" ]; then
+      sudo chown 0:0 "$target"
+      sudo chmod 0755 "$target"
+    elif [ -f "$target" ]; then
+      sudo chown 0:0 "$target"
+      sudo chmod 0644 "$target"
+    fi
+  done < <(cd "$WORK/gms_payload/product" && find . -mindepth 1 | sed 's|^\./||')
+
+  step "applying SELinux context u:object_r:system_file:s0 on /product"
+  while IFS= read -r rel; do
+    target="$MNT/product/$rel"
+    sudo setfattr -n security.selinux -v "$CTX_SYSTEM_FILE_HEX" "$target" 2>/dev/null || true
+  done < <(cd "$WORK/gms_payload/product" && find . -mindepth 1 | sed 's|^\./||')
+fi
+
+sudo umount "$MNT/product"
+
+# Verify product labels on remount
+sudo mount -o loop,ro "$WORK/product_a.img" "$MNT/product"
+check_ctx "$MNT/product/overlay/NavigationBarModeGesturalOverlay.apk" || true
+check_ctx "$MNT/product/overlay/NavigationBarMode3ButtonOverlay.apk" || true
+check_ctx "$MNT/product/usr/share/ime/google/d3_lms/zh_CN_2018030706.zip" || true
 sudo umount "$MNT/product"
 
 step "e2fsck post-surgery product_a"
