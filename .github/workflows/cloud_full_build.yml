@@ -1,0 +1,65 @@
+name: cloud-full-build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "cloud_build.sh"
+      - "tools/**"
+      - "app/**"
+      - "removelist.txt"
+      - ".github/workflows/cloud_full_build.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup high-speed work directory on /mnt
+        run: |
+          sudo mkdir -p /mnt/work
+          sudo chmod 777 /mnt/work
+          df -h /mnt
+
+      - name: Install native Linux dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq e2fsprogs attr zerofree bc
+
+      - name: Download raw partition assets from Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd /mnt/work
+          gh release download raw-inputs -R ${{ github.repository }} -p "*.gz" -p "super_meta.bin"
+          ls -lh /mnt/work
+
+      - name: Copy build workspace to /mnt/work/repo
+        run: |
+          cp -r "$GITHUB_WORKSPACE" /mnt/work/repo
+
+      - name: Run native Linux surgery and packaging
+        run: |
+          bash /mnt/work/repo/cloud_build.sh
+
+      - name: Upload super.img as Actions Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: super-sparse-image
+          path: /mnt/work/out/super.img
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach super.img to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd /mnt/work/out
+          gh release upload raw-inputs super.img sha256sums.txt --clobber -R ${{ github.repository }} || true

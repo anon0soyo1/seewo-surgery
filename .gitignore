@@ -11,6 +11,9 @@
 !.github/workflows/*.yml
 !surgery.sh
 !surgery_gms.sh
+!cloud_build.sh
+!tools/
+!tools/*
 !bimg.py
 !removelist.txt
 !app/
