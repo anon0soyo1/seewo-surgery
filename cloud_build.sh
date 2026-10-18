@@ -90,9 +90,47 @@ props = props.replace("ro.config.enable_system_security=true", "ro.config.enable
 props = props.replace("ro.config.enable_seewo_activity=true", "ro.config.enable_seewo_activity=false")
 props = props.replace("persist.sys.seewo.ui=true", "persist.sys.seewo.ui=false")
 
+# Disable SetupWizard and enable ADB out-of-the-box
+props += "\n# Disable SetupWizard and enable ADB out-of-the-box\n"
+props += "ro.setupwizard.mode=DISABLED\n"
+props += "persist.sys.usb.config=mtp,adb\n"
+props += "ro.debuggable=1\n"
+props += "ro.adb.secure=0\n"
+
 with open(prop_file, "w", encoding="utf-8") as f:
     f.write(props)
 print("[OK] /system/etc/prop.default updated cleanly")
+EOF
+
+log "6.5. Patching MtkSettingsProvider.apk (Auto-provisioning & user setup complete defaults)..."
+sudo python3 - << 'EOF'
+import sys, os, zipfile, io
+sys.path.insert(0, "/mnt/work/repo/tools")
+import arspatch, apkedit
+
+sp_path = "/mnt/work/mnt/system/system/priv-app/MtkSettingsProvider/MtkSettingsProvider.apk"
+with open(sp_path, "rb") as f:
+    blob = f.read()
+
+zf = zipfile.ZipFile(io.BytesIO(blob))
+arsc = zf.read("resources.arsc")
+
+p_rows = arspatch.find_entries(arsc, r"^bool$", r"^def_device_provisioned$")
+u_rows = arspatch.find_entries(arsc, r"^bool$", r"^def_user_setup_complete$")
+
+TRUE_VAL = 0xFFFFFFFF
+patched_arsc = arspatch.set_value(arsc, p_rows[0]["value_off"], TRUE_VAL)
+patched_arsc = arspatch.set_value(patched_arsc, u_rows[0]["value_off"], TRUE_VAL)
+
+temp_in = "/tmp/sp_in.apk"
+temp_out = "/tmp/sp_out.apk"
+with open(temp_in, "wb") as f: f.write(blob)
+apkedit.rewrite(temp_in, temp_out, replacements={"resources.arsc": patched_arsc})
+with open(temp_out, "rb") as f: patched_bytes = f.read()
+with open(sp_path, "wb") as f: f.write(patched_bytes)
+os.remove(temp_in)
+os.remove(temp_out)
+print("[OK] MtkSettingsProvider.apk patched: def_device_provisioned=true, def_user_setup_complete=true")
 EOF
 
 log "7. Eliminating GmsCore.apk RoleManager HOME conflict..."
@@ -124,7 +162,7 @@ else:
     print("[--] GmsCore already does not have category.HOME")
 EOF
 
-log "8. Patching MtkLauncher3QuickStep.apk (Restoring HOME category & invalidating vdex)..."
+log "8. Patching MtkLauncher3QuickStep.apk (Restoring HOME category & cleaning oat)..."
 sudo python3 - << 'EOF'
 import sys, os, zipfile, io
 sys.path.insert(0, "/mnt/work/repo/tools")
@@ -149,14 +187,11 @@ if (b"android.intent.category.LAUNCHER_APP" in mf) or ("android.intent.category.
     os.remove(temp_in)
     os.remove(temp_out)
     print("[OK] Patched MtkLauncher3QuickStep.apk written back")
-
-vdex_path = "/mnt/work/mnt/product/priv-app/MtkLauncher3QuickStep/oat/arm64/MtkLauncher3QuickStep.vdex"
-if os.path.exists(vdex_path):
-    with open(vdex_path, "r+b") as f:
-        f.seek(0)
-        f.write(b"\x00" * 16)
-    print("[OK] Invalidated MtkLauncher3QuickStep.vdex (zeroed first 16 bytes)")
 EOF
+
+# Clean up MtkLauncher3QuickStep oat directory so ART runs pure classes.dex without vdex mismatch
+sudo rm -rf "/mnt/work/mnt/product/priv-app/MtkLauncher3QuickStep/oat"
+step "Cleaned up MtkLauncher3QuickStep/oat directory"
 
 log "9. Patching framework-res RRO (Restoring navigation_bar_height to 48dp)..."
 sudo python3 - << 'EOF'
