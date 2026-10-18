@@ -189,6 +189,55 @@ os.remove(temp_out)
 print("[OK] framework-res RRO navigation_bar_height patched to 48dp")
 EOF
 
+log "9.5. Patching MtkSystemUI.apk (Dropdown screenshot NPE fix)..."
+sudo python3 - << 'EOF'
+import sys, os, zipfile, io, hashlib, zlib, struct
+sys.path.insert(0, "/mnt/work/repo/tools")
+import apkedit
+
+ui_path = "/mnt/work/mnt/product/priv-app/MtkSystemUI/MtkSystemUI.apk"
+with open(ui_path, "rb") as f:
+    blob = f.read()
+
+zf = zipfile.ZipFile(io.BytesIO(blob))
+dex = bytearray(zf.read("classes.dex"))
+
+target1 = bytes.fromhex("721028ad0700")
+target2 = bytes.fromhex("721028ad0100")
+target3 = bytes.fromhex("721028ad0b00")
+
+noped = 0
+if dex[0x2bc9b2:0x2bc9b2+6] == target1:
+    dex[0x2bc9b2:0x2bc9b2+6] = b"\x00" * 6
+    noped += 1
+if dex[0x2bd1e8:0x2bd1e8+6] == target2:
+    dex[0x2bd1e8:0x2bd1e8+6] = b"\x00" * 6
+    noped += 1
+if dex[0x2bd3aa:0x2bd3aa+6] == target3:
+    dex[0x2bd3aa:0x2bd3aa+6] = b"\x00" * 6
+    noped += 1
+
+if noped > 0:
+    dex[12:32] = hashlib.sha1(dex[32:]).digest()
+    struct.pack_into("<I", dex, 8, zlib.adler32(dex[12:]) & 0xFFFFFFFF)
+    temp_in = "/tmp/ui_in.apk"
+    temp_out = "/tmp/ui_out.apk"
+    with open(temp_in, "wb") as f: f.write(blob)
+    apkedit.rewrite(temp_in, temp_out, replacements={"classes.dex": bytes(dex)})
+    with open(temp_out, "rb") as f: patched_bytes = f.read()
+    with open(ui_path, "wb") as f: f.write(patched_bytes)
+    os.remove(temp_in)
+    os.remove(temp_out)
+    print(f"[OK] MtkSystemUI screenshot NPE fixed (NOPed {noped} finisher calls)")
+
+odex_path = "/mnt/work/mnt/product/priv-app/MtkSystemUI/oat/arm64/MtkSystemUI.odex"
+if os.path.exists(odex_path):
+    with open(odex_path, "r+b") as f:
+        f.seek(0)
+        f.write(b"\x00" * 16)
+    print("[OK] Invalidated MtkSystemUI.odex")
+EOF
+
 log "10. Unmounting cleanly..."
 sudo umount "$MNT/system"
 sudo umount "$MNT/product"
