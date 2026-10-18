@@ -171,7 +171,13 @@ with open(rro_path, "rb") as f:
 zf = zipfile.ZipFile(io.BytesIO(blob))
 arsc_bytes = zf.read("resources.arsc")
 
-arsc_patched = arspatch.patch_entries(arsc_bytes, [("dimen", "navigation_bar_height", arspatch.pack_dimen("48dp"))])
+rows = arspatch.find_entries(arsc_bytes, r"^dimen$", r"^navigation_bar_height")
+want_data = arspatch.dim(48, 1)
+arsc_patched = arsc_bytes
+for r in rows:
+    if r["name"] in ["navigation_bar_height", "navigation_bar_height_landscape"]:
+        arsc_patched = arspatch.set_value(arsc_patched, r["value_off"], want_data)
+        print(f"[OK] Set {r['name']} to 48dp (0x{want_data:08x})")
 temp_in = "/tmp/rro_in.apk"
 temp_out = "/tmp/rro_out.apk"
 with open(temp_in, "wb") as f: f.write(blob)
